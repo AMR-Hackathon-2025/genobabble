@@ -1,0 +1,11 @@
+[workspace]
+authors = ["Kim Ng <kimleeng@gmail.com>"]
+channels = ["conda-forge", "bioconda", "bioconda"]
+name = "llm_qc"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+pandas = ">=2.2.3,<3"
