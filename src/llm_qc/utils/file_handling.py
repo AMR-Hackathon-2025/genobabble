@@ -5,9 +5,8 @@ This module provides common functionality for working with data files and pandas
 including sample column detection, file path resolution, and common DataFrame operations.
 """
 
-import os
 from pathlib import Path
-from typing import List, Optional, Set, Tuple, Union
+from typing import Set, Union
 
 import pandas as pd
 
@@ -15,13 +14,13 @@ import pandas as pd
 def get_sample_column(df: pd.DataFrame) -> str:
     """
     Find the column name that represents sample IDs in a DataFrame.
-    
+
     This function looks for a column named 'sample' (case-insensitive) and falls back
     to the first column if no 'sample' column is found.
-    
+
     Args:
         df: The pandas DataFrame to analyze
-        
+
     Returns:
         The name of the column containing sample identifiers
     """
@@ -35,7 +34,7 @@ def get_sample_column(df: pd.DataFrame) -> str:
 def get_project_root() -> Path:
     """
     Get the absolute path to the project root directory.
-    
+
     Returns:
         Path object representing the project root directory
     """
@@ -46,18 +45,18 @@ def get_project_root() -> Path:
 def get_data_dir(data_type: str = "", raw: bool = True) -> Path:
     """
     Get the path to a data directory.
-    
+
     Args:
         data_type: Optional subdirectory name within raw or processed data
                   (e.g., "assembly_stats", "species_data", "qc_data")
         raw: If True, return path to raw data, otherwise processed data
-        
+
     Returns:
         Path object pointing to the requested data directory
     """
     root = get_project_root()
     base_data_dir = root / "data" / ("raw" if raw else "processed")
-    
+
     if data_type:
         return base_data_dir / data_type
     return base_data_dir
@@ -66,10 +65,10 @@ def get_data_dir(data_type: str = "", raw: bool = True) -> Path:
 def read_tsv(file_path: Union[str, Path]) -> pd.DataFrame:
     """
     Read a tab-separated value file into a pandas DataFrame.
-    
+
     Args:
         file_path: Path to the TSV file
-        
+
     Returns:
         DataFrame containing the file contents
 
@@ -90,11 +89,11 @@ def read_tsv(file_path: Union[str, Path]) -> pd.DataFrame:
         raise RuntimeError(f"Error reading file {file_path}: {str(e)}")
 
 
-def write_tsv(df: pd.DataFrame, file_path: Union[str, Path], 
+def write_tsv(df: pd.DataFrame, file_path: Union[str, Path],
               index: bool = False, create_dir: bool = True) -> None:
     """
     Write a pandas DataFrame to a tab-separated value file.
-    
+
     Args:
         df: DataFrame to save
         file_path: Path where the file should be saved
@@ -105,10 +104,10 @@ def write_tsv(df: pd.DataFrame, file_path: Union[str, Path],
         IOError: If the file cannot be written
     """
     path = Path(file_path)
-    
+
     if create_dir and not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         df.to_csv(path, sep='\t', index=index)
         print(f"Wrote {len(df)} rows to {path}")
@@ -116,17 +115,17 @@ def write_tsv(df: pd.DataFrame, file_path: Union[str, Path],
         raise IOError(f"Failed to write to {path}: {str(e)}")
 
 
-def read_sample_set_from_file(file_path: Union[str, Path], 
-                             column_index: int = 0, 
+def read_sample_set_from_file(file_path: Union[str, Path],
+                             column_index: int = 0,
                              skip_header: bool = True) -> Set[str]:
     """
     Read a set of sample IDs from a file.
-    
+
     Args:
         file_path: Path to the file containing sample IDs
         column_index: Index of the column containing sample IDs (0-based)
         skip_header: Whether to skip the first line of the file
-        
+
     Returns:
         Set of sample IDs (as strings)
     """
@@ -134,7 +133,7 @@ def read_sample_set_from_file(file_path: Union[str, Path],
     with open(file_path, encoding='utf-8') as f:
         if skip_header:
             next(f, None)  # Skip header
-        
+
         for line in f:
             if line.strip():
                 try:
@@ -142,18 +141,18 @@ def read_sample_set_from_file(file_path: Union[str, Path],
                     sample_ids.add(str(sample_id))
                 except IndexError:
                     continue  # Skip malformed lines
-    
+
     return sample_ids
 
 
 def standardize_sample_ids(df: pd.DataFrame, sample_col: str) -> pd.DataFrame:
     """
     Standardize sample IDs by converting them to strings.
-    
+
     Args:
         df: DataFrame to process
         sample_col: Name of the column containing sample IDs
-        
+
     Returns:
         DataFrame with standardized sample IDs
     """
@@ -165,10 +164,10 @@ def standardize_sample_ids(df: pd.DataFrame, sample_col: str) -> pd.DataFrame:
 def ensure_directory_exists(dir_path: Union[str, Path]) -> Path:
     """
     Ensure that a directory exists, creating it if necessary.
-    
+
     Args:
         dir_path: Path to the directory
-        
+
     Returns:
         Path object for the directory
     """
@@ -180,10 +179,10 @@ def ensure_directory_exists(dir_path: Union[str, Path]) -> Path:
 def file_exists(file_path: Union[str, Path]) -> bool:
     """
     Check if a file exists.
-    
+
     Args:
         file_path: Path to the file
-        
+
     Returns:
         True if the file exists, False otherwise
     """
@@ -191,42 +190,78 @@ def file_exists(file_path: Union[str, Path]) -> bool:
 
 
 def merge_dataframes_on_sample(
-    df1: pd.DataFrame, 
-    df2: pd.DataFrame, 
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
     how: str = 'left',
     drop_duplicate_sample_col: bool = True
 ) -> pd.DataFrame:
     """
     Merge two DataFrames on their sample columns.
-    
+
+    The function identifies sample columns, standardizes them to strings,
+    and then performs the merge. If sample column names differ, behavior
+    is controlled by `drop_duplicate_sample_col`.
+
     Args:
-        df1: First DataFrame (left side of the merge)
-        df2: Second DataFrame (right side of the merge)
-        how: Type of merge to perform ('left', 'right', 'inner', 'outer')
-        drop_duplicate_sample_col: Whether to drop the duplicate sample column after merging
-        
+        df1: The left DataFrame
+        df2: The right DataFrame
+        how: Type of merge to be performed (e.g., 'left', 'right',
+             'outer', 'inner')
+        drop_duplicate_sample_col:
+            - If True (default): If sample column names differ
+              (e.g., 'Sample' in df1, 'SampleID' in df2), df2's sample
+              column ('SampleID') is renamed to match df1's ('Sample') for
+              the merge, and the original 'SampleID' column from df2 will
+              not be in the output.
+            - If False: If sample column names differ, the merge is
+              performed using these distinct names (e.g., on df1.Sample
+              and df2.SampleID), and both columns will be present in the
+              output.
+            - This flag has no effect if sample columns are named
+              identically in df1 and df2; in that case, the merge happens
+              on the common column name, and only one such column appears.
+
     Returns:
-        Merged DataFrame
+        The merged DataFrame
     """
-    # Find sample columns in both DataFrames
-    df1_sample_col = get_sample_column(df1)
-    df2_sample_col = get_sample_column(df2)
-    
-    # Standardize sample IDs
-    df1 = standardize_sample_ids(df1, df1_sample_col)
-    df2 = standardize_sample_ids(df2, df2_sample_col)
-    
-    # Merge DataFrames
-    merged = pd.merge(
-        df1, df2,
-        left_on=df1_sample_col,
-        right_on=df2_sample_col,
-        how=how
-    )
-    
-    # Drop duplicate sample column if requested and if it exists
-    if drop_duplicate_sample_col and df1_sample_col != df2_sample_col and df2_sample_col in merged.columns:
-        merged = merged.drop(columns=[df2_sample_col])
-    
-    return merged
+    df1_copy = df1.copy()
+    df2_copy = df2.copy()
+
+    df1_sample_col = get_sample_column(df1_copy)
+    df2_sample_col = get_sample_column(df2_copy)
+
+    # Standardize sample IDs to string type for robust merging
+    df1_copy = standardize_sample_ids(df1_copy, df1_sample_col)
+    df2_copy = standardize_sample_ids(df2_copy, df2_sample_col)
+
+    if df1_sample_col == df2_sample_col:
+        # Sample column names are the same, merge directly on this column
+        merged_df = pd.merge(df1_copy, df2_copy, on=df1_sample_col, how=how)
+    else:
+        # Sample column names differ
+        if drop_duplicate_sample_col:
+            # Rename df2's sample column to match df1's for a clean merge,
+            # effectively dropping df2's original sample column name from
+            # the output.
+            if df1_sample_col in df2_copy.columns:
+                # df1's sample col name also exists as a data col in df2.
+                # Pandas merge suffixes may occur on the data column if not
+                # handled explicitly.
+                print(f"Warning: df1 sample column '{df1_sample_col}' also "
+                      f"exists as a data column in df2. Pandas merge "
+                      f"suffixes may occur on the data column.")
+            df2_copy = df2_copy.rename(columns={df2_sample_col: df1_sample_col})
+            merged_df = pd.merge(df1_copy, df2_copy, on=df1_sample_col, 
+                                 how=how)
+        else:
+            # Keep both original sample columns; merge using left_on/right_on
+            merged_df = pd.merge(df1_copy, df2_copy, 
+                                 left_on=df1_sample_col, 
+                                 right_on=df2_sample_col, 
+                                 how=how)
+            # If df1_sample_col was 'Sample' and df2_sample_col was 
+            # 'SampleID', merged_df will have both 'Sample' and 'SampleID'.
+            # Pandas handles NaN-filling for non-matching rows correctly.
+
+    return merged_df
 
