@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python WASM Test</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+</head>
+<body>
+    <h1>Python WebAssembly Demo</h1>
+    <div id="statusMessages">
+        <p>Loading Pyodide and running Python script...</p>
+    </div>
+    <hr>
+    <h2>Results:</h2>
+    <div id="resultsOutput">
+        <!-- Python script results will be dynamically added here -->
+    </div>
+
+    <script type="text/javascript">
+        async function main() {
+            const statusDiv = document.getElementById("statusMessages");
+            const resultsDiv = document.getElementById("resultsOutput");
+
+            function addStatus(message) {
+                const p = document.createElement("p");
+                p.textContent = message;
+                statusDiv.appendChild(p);
+                console.log(message);
+            }
+
+            function addRawHtmlResult(htmlContent) {
+                const div = document.createElement("div");
+                div.innerHTML = htmlContent; // Ensure this is safe if content can be user-derived
+                resultsDiv.appendChild(div);
+            }
+            
+            statusDiv.innerHTML = '<p>Initializing Pyodide...</p>'; // Clear initial message
+
+            let pyodide = await loadPyodide();
+            addStatus("Pyodide loaded!");
+
+            try {
+                addStatus("Loading pandas...");
+                await pyodide.loadPackage("pandas");
+                addStatus("Pandas loaded.");
+
+                addStatus("Fetching Python modules and data files...");
+                const fileHandlingCodeP = fetch('../src/llm_qc/utils/file_handling.py').then(r => r.text());
+                const speciesCodeP = fetch('../src/llm_qc/processing/species.py').then(r => r.text());
+                const assemblyStatsDataP = fetch('../data/raw/assembly_stats/assembly-stats.tsv').then(r => r.text());
+                const speciesCallsDataP = fetch('../data/raw/species_data/species_calls.tsv').then(r => r.text());
+
+                const [
+                    fileHandlingCode, 
+                    speciesCode, 
+                    assemblyStatsData, 
+                    speciesCallsData
+                ] = await Promise.all([fileHandlingCodeP, speciesCodeP, assemblyStatsDataP, speciesCallsDataP]);
+                
+                addStatus("All files fetched.");
+
+                addStatus("Setting up virtual file system and llm_qc package in Pyodide...");
+                // Create directory structure for the package
+                pyodide.FS.mkdirTree('/llm_qc/utils');
+                pyodide.FS.mkdirTree('/llm_qc/processing');
+                pyodide.FS.writeFile('/llm_qc/__init__.py', '# Empty init', { encoding: 'utf8' });
+                pyodide.FS.writeFile('/llm_qc/utils/__init__.py', '# Empty init', { encoding: 'utf8' });
+                pyodide.FS.writeFile('/llm_qc/processing/__init__.py', '# Empty init', { encoding: 'utf8' });
+                
+                // Write the Python module files
+                pyodide.FS.writeFile('/llm_qc/utils/file_handling.py', fileHandlingCode, { encoding: 'utf8' });
+                pyodide.FS.writeFile('/llm_qc/processing/species.py', speciesCode, { encoding: 'utf8' });
+
+                // Add the root of the package to Python's sys.path
+                await pyodide.runPythonAsync("import sys; sys.path.append('/')");
+                addStatus("llm_qc package structure created in Pyodide's FS.");
+
+                // Create directory structure for data and write data files
+                pyodide.FS.mkdirTree('/data/raw/assembly_stats');
+                pyodide.FS.mkdirTree('/data/raw/species_data');
+                pyodide.FS.mkdirTree('/data/processed'); // For the output
+
+                pyodide.FS.writeFile('/data/raw/assembly_stats/assembly-stats.tsv', assemblyStatsData, { encoding: 'utf8' });
+                pyodide.FS.writeFile('/data/raw/species_data/species_calls.tsv', speciesCallsData, { encoding: 'utf8' });
+                addStatus("Data files written to Pyodide's virtual FS.");
+                
+                const pythonExecutionScript = `
+import sys
+print(f"Python version in Pyodide: {sys.version}")
+print(f"sys.path: {sys.path}")
+
+# Verify file_handling.py's get_project_root() behavior
+from llm_qc.utils.file_handling import get_project_root, get_data_dir
+print(f"get_project_root() in Pyodide: {get_project_root()}")
+print(f"get_data_dir('assembly_stats', raw=True): {get_data_dir('assembly_stats', raw=True)}")
+print(f"get_data_dir('species_data', raw=True): {get_data_dir('species_data', raw=True)}")
+print(f"get_data_dir(raw=False) for processed: {get_data_dir(raw=False)}")
+
+
+from llm_qc.processing.species import add_species_to_assembly_stats
+import pandas as pd
+from io import StringIO
+import logging
+
+print("Attempting to run add_species_to_assembly_stats()...")
+# This function uses default file paths which should resolve correctly now.
+# It reads from /data/raw/... and writes to /data/processed/...
+add_species_to_assembly_stats() 
+print("add_species_to_assembly_stats() completed.")
+
+output_path = '/data/processed/assembly-stats.with_species.tsv'
+print(f"Reading first ~101 lines from output file: {output_path}")
+
+# Read only the first N lines (e.g., header + 100 data rows)
+lines_to_read = 101 
+first_lines_list = []
+try:
+    with open(output_path, 'r', encoding='utf-8') as f:
+        for i, line in enumerate(f):
+            if i < lines_to_read:
+                first_lines_list.append(line)
+            else:
+                break
+except Exception as e:
+    print(f"Error reading lines from {output_path}: {e}")
+    raise
+
+small_merged_df_string = "".join(first_lines_list)
+
+if not small_merged_df_string:
+    raise ValueError(f"Could not read initial lines from output file {output_path} or file is empty/too short.")
+
+print(f"Successfully read {len(small_merged_df_string)} characters (up to {lines_to_read} lines) from output file.")
+
+# Now parse only this small string into a DataFrame
+df_head = pd.read_csv(StringIO(small_merged_df_string), sep='\\\\t')
+print(f"Loaded DataFrame from initial lines with {len(df_head)} rows and columns: {list(df_head.columns)}")
+
+# Return as HTML, without the index. 
+# df_head already contains at most 100 data rows (if the file had that many after the header).
+html_output = df_head.to_html(classes=["table", "table-bordered", "table-striped", "table-hover", "table-sm"], border=0, index=False)
+html_output
+`;
+                addStatus("Executing Python script to process species data...");
+                let html_table_result = await pyodide.runPythonAsync(pythonExecutionScript);
+                addStatus("Python script executed.");
+
+                resultsDiv.innerHTML = ''; // Clear previous results
+                addRawHtmlResult("<h3>Merged Assembly Stats with Species (First 100 lines):</h3>" + html_table_result);
+
+            } catch (err) {
+                const p = document.createElement("p");
+                p.style.color = "red";
+                p.textContent = `Error: ${err}\\n${err.stack ? err.stack : ''}`;
+                statusDiv.appendChild(p);
+                console.error("Error in main function:", err, err.stack);
+            }
+        }
+        main();
+    </script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1, h2, h3 { color: #333; }
+        #statusMessages { background-color: #fff; padding: 15px; margin-bottom: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        #statusMessages p { margin: 8px 0; font-style: italic; color: #555; line-height: 1.6; }
+        #resultsOutput { background-color: #fff; padding: 15px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        #resultsOutput p { margin: 10px 0; line-height: 1.6; }
+        #resultsOutput strong { color: #000; }
+        hr { margin: 25px 0; border: 0; border-top: 1px solid #ddd; }
+        .table { width: 100%; max-width: 100%; margin-bottom: 1rem; background-color: transparent; border-collapse: collapse; font-size: 0.9em; }
+        .table th, .table td { padding: 0.5rem; vertical-align: top; border-top: 1px solid #dee2e6; }
+        .table thead th { vertical-align: bottom; border-bottom: 2px solid #dee2e6; background-color: #e9ecef; }
+        .table-bordered th, .table-bordered td { border: 1px solid #dee2e6; }
+        .table-striped tbody tr:nth-of-type(odd) { background-color: rgba(0, 0, 0, 0.03); }
+        .table-hover tbody tr:hover { color: #212529; background-color: rgba(0, 0, 0, 0.06); }
+        .table-sm th, .table-sm td { padding: 0.3rem; }
+    </style>
+</body>
+</html>
