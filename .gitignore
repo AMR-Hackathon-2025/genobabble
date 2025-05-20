@@ -1,0 +1,94 @@
+# Python bytecode files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env
+.venv
+env.bak/
+venv.bak/
+.python-version
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+data/processed/
+.pixi/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Large files
+*.zip
+*.gz
+
+# Raw data files - too large for the repository
+data/raw/assembly_stats/*.tsv
+data/raw/qc_data/*.tsv
+data/raw/species_data/*.tsv
+
+# Processed data files (already covered by data/processed/ but being explicit)
+data/processed/*.tsv
+
+# pixi environments
+.pixi
+*.egg-info
+assembly-stats.tsv
+assembly-stats.with_species.tsv
+species_calls.tsv
+sylph.tsv
+checkm2.tsv
+assembly-stats-complete.tsv
