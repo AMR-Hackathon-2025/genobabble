@@ -8,6 +8,11 @@
 </head>
 <body>
     <h1>Python WebAssembly Demo</h1>
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
+    <p id="progress-text">Initializing...</p>
+
     <div id="statusMessages">
         <p>Loading Pyodide and running Python script...</p>
     </div>
@@ -21,6 +26,16 @@
         async function main() {
             const statusDiv = document.getElementById("statusMessages");
             const resultsDiv = document.getElementById("resultsOutput");
+            const progressBar = document.getElementById("progress-bar");
+            const progressText = document.getElementById("progress-text");
+
+            function updateProgress(percentage, text) {
+                const p = Math.max(0, Math.min(100, percentage)); // Cap between 0 and 100
+                progressBar.style.width = p + "%";
+                // progressBar.innerText = p + "%"; // Removed to hide text inside the bar
+                progressText.innerText = text;
+                console.log(`Progress: ${p}% - ${text}`);
+            }
 
             function addStatus(message) {
                 const p = document.createElement("p");
@@ -36,16 +51,21 @@
             }
             
             statusDiv.innerHTML = '<p>Initializing Pyodide...</p>'; // Clear initial message
+            updateProgress(0, "Initializing Pyodide...");
 
             let pyodide = await loadPyodide();
             addStatus("Pyodide loaded!");
+            updateProgress(10, "Pyodide loaded!");
 
             try {
                 addStatus("Loading pandas...");
+                updateProgress(15, "Loading pandas...");
                 await pyodide.loadPackage("pandas");
                 addStatus("Pandas loaded.");
+                updateProgress(25, "Pandas loaded.");
 
                 addStatus("Fetching Python modules and data files...");
+                updateProgress(30, "Fetching Python modules and data files...");
                 const fileHandlingCodeP = fetch('../src/llm_qc/utils/file_handling.py').then(r => r.text());
                 const speciesCodeP = fetch('../src/llm_qc/processing/species.py').then(r => r.text());
                 const assemblyStatsDataP = fetch('../data/raw/assembly_stats/assembly-stats.tsv').then(r => r.text());
@@ -59,8 +79,10 @@
                 ] = await Promise.all([fileHandlingCodeP, speciesCodeP, assemblyStatsDataP, speciesCallsDataP]);
                 
                 addStatus("All files fetched.");
+                updateProgress(50, "All files fetched.");
 
                 addStatus("Setting up virtual file system and llm_qc package in Pyodide...");
+                updateProgress(55, "Setting up virtual file system...");
                 // Create directory structure for the package
                 pyodide.FS.mkdirTree('/llm_qc/utils');
                 pyodide.FS.mkdirTree('/llm_qc/processing');
@@ -75,6 +97,7 @@
                 // Add the root of the package to Python's sys.path
                 await pyodide.runPythonAsync("import sys; sys.path.append('/')");
                 addStatus("llm_qc package structure created in Pyodide's FS.");
+                updateProgress(65, "llm_qc package setup complete.");
 
                 // Create directory structure for data and write data files
                 pyodide.FS.mkdirTree('/data/raw/assembly_stats');
@@ -84,6 +107,7 @@
                 pyodide.FS.writeFile('/data/raw/assembly_stats/assembly-stats.tsv', assemblyStatsData, { encoding: 'utf8' });
                 pyodide.FS.writeFile('/data/raw/species_data/species_calls.tsv', speciesCallsData, { encoding: 'utf8' });
                 addStatus("Data files written to Pyodide's virtual FS.");
+                updateProgress(75, "Data files written to virtual FS.");
                 
                 const pythonExecutionScript = `
 import sys
@@ -106,45 +130,47 @@ import logging
 print("Attempting to run add_species_to_assembly_stats()...")
 # This function uses default file paths which should resolve correctly now.
 # It reads from /data/raw/... and writes to /data/processed/...
-add_species_to_assembly_stats() 
+add_species_to_assembly_stats()
 print("add_species_to_assembly_stats() completed.")
 
 output_path = '/data/processed/assembly-stats.with_species.tsv'
 print(f"Reading first ~101 lines from output file: {output_path}")
 
 # Read only the first N lines (e.g., header + 100 data rows)
-lines_to_read = 101 
-first_lines_list = []
-try:
+lines_to_read = 101
+first_lines_list = [];
+try: # Corrected Python try syntax
     with open(output_path, 'r', encoding='utf-8') as f:
         for i, line in enumerate(f):
             if i < lines_to_read:
-                first_lines_list.append(line)
+                first_lines_list.append(line);
             else:
-                break
-except Exception as e:
-    print(f"Error reading lines from {output_path}: {e}")
-    raise
+                break;
+except Exception as e: # Corrected Python except syntax
+    print(f"Error reading lines from {output_path}: {e}");
+    raise;
 
-small_merged_df_string = "".join(first_lines_list)
+small_merged_df_string = "".join(first_lines_list);
 
 if not small_merged_df_string:
-    raise ValueError(f"Could not read initial lines from output file {output_path} or file is empty/too short.")
+    raise ValueError(f"Could not read initial lines from output file {output_path} or file is empty/too short.");
 
-print(f"Successfully read {len(small_merged_df_string)} characters (up to {lines_to_read} lines) from output file.")
+print(f"Successfully read {len(small_merged_df_string)} characters (up to {lines_to_read} lines) from output file.");
 
 # Now parse only this small string into a DataFrame
-df_head = pd.read_csv(StringIO(small_merged_df_string), sep='\\\\t')
-print(f"Loaded DataFrame from initial lines with {len(df_head)} rows and columns: {list(df_head.columns)}")
+df_head = pd.read_csv(StringIO(small_merged_df_string), sep='\\t');
+print(f"Loaded DataFrame from initial lines with {len(df_head)} rows and columns: {list(df_head.columns)}");
 
-# Return as HTML, without the index. 
+# Return as HTML, without the index.
 # df_head already contains at most 100 data rows (if the file had that many after the header).
-html_output = df_head.to_html(classes=["table", "table-bordered", "table-striped", "table-hover", "table-sm"], border=0, index=False)
+html_output = df_head.to_html(classes=["table", "table-bordered", "table-striped", "table-hover", "table-sm"], border=0, index=False);
 html_output
 `;
                 addStatus("Executing Python script to process species data...");
+                updateProgress(85, "Executing Python script...");
                 let html_table_result = await pyodide.runPythonAsync(pythonExecutionScript);
                 addStatus("Python script executed.");
+                updateProgress(100, "Python script executed. Results below.");
 
                 resultsDiv.innerHTML = ''; // Clear previous results
                 addRawHtmlResult("<h3>Merged Assembly Stats with Species (First 100 lines):</h3>" + html_table_result);
@@ -162,6 +188,33 @@ html_output
     <style>
         body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
         h1, h2, h3 { color: #333; }
+        
+        #progress-container {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+            overflow: hidden; /* Ensures the inner bar corners are also rounded */
+        }
+        #progress-bar {
+            width: 0%;
+            height: 22px;
+            background-color: #28a745; /* A nice green */
+            border-radius: 8px; /* Match container for smooth look */
+            text-align: center;
+            line-height: 22px;
+            color: white;
+            font-weight: bold;
+            transition: width 0.4s ease-in-out; /* Smooth transition for width changes */
+        }
+        #progress-text {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333; /* Darker text for better readability */
+            font-style: italic;
+        }
+
         #statusMessages { background-color: #fff; padding: 15px; margin-bottom: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         #statusMessages p { margin: 8px 0; font-style: italic; color: #555; line-height: 1.6; }
         #resultsOutput { background-color: #fff; padding: 15px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
